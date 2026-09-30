@@ -1,0 +1,10 @@
+{
+  "name": "okoa-jamii",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-First Emergency Response and Community Protection Platform",
+  "scripts": {
+    "dev:mobile": "npm --prefix mobile start",
+    "dev:dashboard": "npm --prefix dashboard run dev"
+  }
+}

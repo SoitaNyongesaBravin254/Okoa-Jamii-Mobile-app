@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Android
+android/.gradle/
+android/local.properties
+
+# iOS
+ios/Pods/
+
+# Testing
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
