@@ -1,61 +1,66 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Redirect, router } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
+import { NoticeBanner } from '@/components/notice-banner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { AppButton } from '@/components/ui/app-button';
+import { LoadingView } from '@/components/ui/state-views';
+import { appConfig } from '@/config/app-config';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useAuth } from '@/store/auth-provider';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+/**
+ * Public welcome screen and app entry point.
+ * Signed-in users are redirected into the authenticated tab area.
+ */
+export default function WelcomeScreen() {
+  const { status } = useAuth();
 
-export default function HomeScreen() {
+  if (status === 'loading') {
+    return <LoadingView label={`Starting ${appConfig.displayName}…`} />;
+  }
+  if (status === 'authenticated') {
+    return <Redirect href="/home" />;
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
+        <View style={styles.hero}>
+          <ThemedText accessibilityRole="header" type="title" style={styles.title}>
+            {appConfig.displayName}
           </ThemedText>
-        </ThemedView>
+          <ThemedText type="subtitle" themeColor="textSecondary" style={styles.tagline}>
+            {appConfig.tagline}
+          </ThemedText>
+        </View>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
+        <ThemedText style={styles.description}>
+          Report emergencies and help protect your community. Okoa Jamii is being rebuilt phase by
+          phase — this release restores the application foundation only, with sign-in simulated on
+          this device until the backend arrives.
         </ThemedText>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+        <View style={styles.actions}>
+          <AppButton label="Sign in" onPress={() => router.push('/login')} />
+          <AppButton
+            label="Create an account"
+            variant="secondary"
+            onPress={() => router.push('/register')}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
+        <NoticeBanner
+          tone="development"
+          title="Development mode"
+          message="Sign-in is simulated on this device. No email or password is sent anywhere — there is no backend yet."
+        />
+
+        <ThemedText type="small" themeColor="textSecondary" style={styles.version}>
+          Version {appConfig.version} · {appConfig.environment}
+        </ThemedText>
       </SafeAreaView>
     </ThemedView>
   );
@@ -69,30 +74,30 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
     maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
+    alignSelf: 'center',
     justifyContent: 'center',
-    flex: 1,
     paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
+  hero: {
+    gap: Spacing.two,
+  },
   title: {
-    textAlign: 'center',
+    textAlign: 'left',
   },
-  code: {
-    textTransform: 'uppercase',
+  tagline: {
+    fontSize: 20,
+    lineHeight: 28,
   },
-  stepContainer: {
+  description: {
+    gap: Spacing.two,
+  },
+  actions: {
     gap: Spacing.three,
     alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  },
+  version: {
+    textAlign: 'center',
   },
 });
