@@ -14,7 +14,14 @@ let instancePromise: Promise<SqliteAlertRepository> | null = null;
  */
 export function getAlertRepository(): Promise<SqliteAlertRepository> {
   if (!instancePromise) {
-    instancePromise = openExpoSqliteDriver().then((driver) => new SqliteAlertRepository(driver));
+    instancePromise = openExpoSqliteDriver()
+      .then((driver) => new SqliteAlertRepository(driver))
+      .catch((error: unknown) => {
+        // A failed open must not poison every later attempt: clear the cached
+        // promise so the caller's "try again" can re-open the database.
+        instancePromise = null;
+        throw error;
+      });
   }
   return instancePromise;
 }
@@ -22,4 +29,6 @@ export function getAlertRepository(): Promise<SqliteAlertRepository> {
 export { SqliteAlertRepository } from './sqlite-alert-repository';
 export { AlertNotFoundError, AlertStorageError, AlertValidationError } from './alert-errors';
 export { createAlertRecord } from './alert-model';
+export { createSosSubmission } from './sos-submission';
+export type { SosSubmission, SosSubmissionResult, LocationCapture } from './sos-submission';
 export type { UpdateStatusOptions } from './sqlite-alert-repository';

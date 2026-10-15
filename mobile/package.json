@@ -11,6 +11,7 @@
     "expo-glass-effect": "~57.0.4",
     "expo-image": "~57.0.5",
     "expo-linking": "~57.0.11",
+    "expo-location": "~57.0.21",
     "expo-network": "~57.0.2",
     "expo-router": "~57.0.24",
     "expo-secure-store": "~57.0.4",
@@ -46,7 +47,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test .test-build/services/alerts/"
+    "test": "tsc -p tsconfig.test.json && node --test .test-build/services/alerts/ .test-build/services/location/"
   },
   "private": true
 }

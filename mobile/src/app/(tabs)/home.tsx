@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -56,8 +57,18 @@ export default function HomeScreen() {
           <ThemedView type="backgroundElement" style={styles.card}>
             <ThemedText type="smallBold">Emergency alerts</ThemedText>
             <EmptyStateView
-              title="No alerts yet"
-              description="Emergency reporting is not part of this release. It arrives in Phase 2 with real device location, offline storage and careful sync."
+              title="Save an emergency alert"
+              description="The SOS flow attaches your real device location (if you allow it) and stores the alert privately on this device. Alerts are not yet delivered to a response team."
+            />
+            <AppButton
+              label="Open SOS"
+              onPress={() => router.push('/sos')}
+              accessibilityLabel="Open the SOS screen to save an emergency alert on this device"
+            />
+            <AppButton
+              label="Local alert history"
+              variant="secondary"
+              onPress={() => router.push('/alert-history')}
             />
           </ThemedView>
 

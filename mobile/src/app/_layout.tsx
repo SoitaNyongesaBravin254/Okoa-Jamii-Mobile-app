@@ -24,6 +24,8 @@ export default function RootLayout() {
           <Stack.Screen name="login" options={{ title: 'Sign in' }} />
           <Stack.Screen name="register" options={{ title: 'Create account' }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="sos" options={{ title: 'Emergency SOS' }} />
+          <Stack.Screen name="alert-history" options={{ title: 'Alert history' }} />
         </Stack>
       </AuthProvider>
     </ThemeProvider>

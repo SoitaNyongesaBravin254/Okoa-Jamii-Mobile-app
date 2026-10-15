@@ -18,6 +18,7 @@
   "include": [
     "src/types/**/*.ts",
     "src/services/alerts/**/*.ts",
+    "src/services/location/__tests__/**/*.ts",
     "!src/services/alerts/expo-sqlite-driver.ts",
     "!src/services/alerts/index.ts"
   ]

@@ -34,7 +34,13 @@
         }
       ],
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Okoa Jamii uses your location only when you create an emergency alert, to attach your current position to the alert saved on this device. Location is never collected continuously and is not sent anywhere in this release."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
