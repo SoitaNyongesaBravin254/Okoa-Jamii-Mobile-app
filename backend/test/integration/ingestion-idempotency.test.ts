@@ -108,8 +108,16 @@ if (testUri.length === 0) {
     }, 20_000);
 
     it('never writes the same id twice under sequential retries', async () => {
-      const first = await alerts.ingest(candidate, null);
-      const second = await alerts.ingest(candidate, null);
+      // Own deterministic id: the preceding test ingests `candidate`, and
+      // prefixed fixtures are only cleared in beforeAll/afterAll, so sharing
+      // an id would make this test's result depend on execution order.
+      const id = `${IT_ALERT_PREFIX}sequential_retry`;
+      // Narrow per-test cleanup, same pattern as the concurrency test below.
+      await Alert.deleteMany({ id });
+      const payload = { ...candidate, id };
+
+      const first = await alerts.ingest(payload, null);
+      const second = await alerts.ingest(payload, null);
       if (first.kind === 'unconfirmed' || second.kind === 'unconfirmed') {
         throw new Error('expected the database to confirm both outcomes');
       }
@@ -117,7 +125,7 @@ if (testUri.length === 0) {
       expect(second.kind).toBe('duplicate');
       expect(second.receipt).toBe(first.receipt);
 
-      const count = await Alert.countDocuments({ id: candidate.id });
+      const count = await Alert.countDocuments({ id });
       expect(count).toBe(1);
     }, 20_000);
 
