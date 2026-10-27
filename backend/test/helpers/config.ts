@@ -17,7 +17,8 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     mongodbUri: 'mongodb://127.0.0.1:27017/okoa_fixture_test',
     jwtSecret: TEST_JWT_SECRET,
     jwtExpiresIn: '1h',
-    corsOrigin: null,
+    corsOrigins: Object.freeze([]) as readonly string[],
+    trustProxy: false as const,
     logLevel: 'error' as const,
     // Low cost: these tests hash passwords on every run.
     bcryptRounds: 4,

@@ -8,14 +8,25 @@
  * Middleware order: helmet -> cors -> body parser -> access log -> rate limit
  * -> routes -> 404 -> error handler. The error handler must be last so every
  * thrown AppError is rendered by the same sanitizer.
+ *
+ * Proxy trust is set from validated configuration, never unconditionally:
+ * `app.set('trust proxy', …)` decides which peers may speak for a client IP,
+ * and that same value drives Express' `req.ip` and therefore rate-limit
+ * bucketing. Trusting every peer would let any client forge X-Forwarded-For
+ * and mint unlimited buckets.
  */
 
 import express, { type Express, type RequestHandler } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { rateLimit } from 'express-rate-limit';
+import {
+  rateLimit,
+  type RateLimitExceededEventHandler,
+  type Logger as RateLimitLogger,
+} from 'express-rate-limit';
 import type { AppConfig } from './config/env';
 import type { Logger } from './lib/logger';
+import { RateLimitedError } from './lib/errors';
 import type { AuthService } from './services/auth-service';
 import type { AlertService } from './services/alert-service';
 import type { TokenService } from './services/token-service';
@@ -35,6 +46,42 @@ export type AppDependencies = Readonly<{
   /** Defaults to the real Mongoose probe; tests inject fakes. */
   probeDatabase?: () => ReturnType<typeof probeConnection>;
 }>;
+
+/**
+ * Bridges express-rate-limit's diagnostics onto the project logger so its
+ * validation findings land in the same redacted stream as everything else
+ * instead of raw console output. Findings are forwarded, never swallowed;
+ * the logger's redaction pipeline scrubs `detail` before it reaches a sink.
+ */
+function createRateLimitLogger(logger: Logger): RateLimitLogger {
+  const forward = (level: 'error' | 'warn') => (error: unknown, message?: string): void => {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code: unknown }).code)
+        : undefined;
+    const detail = error instanceof Error ? error.message : String(error);
+    logger[level](message ?? 'rate limiter diagnostic', {
+      ...(code ? { rateLimiterCode: code } : {}),
+      detail,
+    });
+  };
+  return { error: forward('error'), warn: forward('warn') };
+}
+
+/**
+ * 429 in the project's error envelope: `{ error: { code, message } }` with the
+ * stable `rate-limited` code from the error taxonomy. The body is built only
+ * from values we control — no window sizes, no counts, no internal detail.
+ */
+function createRateLimitHandler(logger: Logger): RateLimitExceededEventHandler {
+  const limited = new RateLimitedError();
+  return (req, res) => {
+    logger.warn('rate limit exceeded', { method: req.method, path: req.path });
+    res.status(limited.statusCode).json({
+      error: { code: limited.code, message: limited.message },
+    });
+  };
+}
 
 /** Access log: method, path (no query string — it may carry tokens), status. */
 function createRequestLogger(logger: Logger): RequestHandler {
@@ -59,9 +106,15 @@ export function createApp(deps: AppDependencies): Express {
   const app = express();
   app.disable('x-powered-by');
 
+  // Validated proxy trust: `false` (direct connection), a hop count, or an
+  // allow-list of proxy IPs/CIDRs. Never `true`.
+  app.set('trust proxy', config.trustProxy);
+
   app.use(helmet());
-  if (config.corsOrigin) {
-    app.use(cors({ origin: config.corsOrigin }));
+  if (config.corsOrigins.length > 0) {
+    // `cors` reflects a request Origin only when it is an exact member of the
+    // list; a non-member (and a request with no Origin) gets no allow-header.
+    app.use(cors({ origin: [...config.corsOrigins] }));
   }
   app.use(express.json({ limit: config.maxRequestBodyBytes }));
   app.use(createRequestLogger(logger));
@@ -69,12 +122,16 @@ export function createApp(deps: AppDependencies): Express {
   // Rate limiting is infrastructure protection, not a tested behaviour: it is
   // disabled under NODE_ENV=test so suites never trip it accidentally.
   if (!config.isTest) {
+    const rateLimitLogger = createRateLimitLogger(logger);
+    const onLimitExceeded = createRateLimitHandler(logger);
     app.use(
       rateLimit({
         windowMs: 60_000,
         limit: 300,
         standardHeaders: true,
         legacyHeaders: false,
+        logger: rateLimitLogger,
+        handler: onLimitExceeded,
       }),
     );
     // Auth endpoints get a stricter budget: password guessing is expensive.
@@ -85,6 +142,8 @@ export function createApp(deps: AppDependencies): Express {
         limit: 30,
         standardHeaders: true,
         legacyHeaders: false,
+        logger: rateLimitLogger,
+        handler: onLimitExceeded,
       }),
     );
   }
