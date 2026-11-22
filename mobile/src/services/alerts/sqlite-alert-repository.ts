@@ -23,8 +23,11 @@ import {
   isValidAlertId,
   requireServerReceipt,
 } from './alert-model';
+import type { AlertRepository, UpdateStatusOptions } from './alert-repository';
 import type { SqlDriver, SqlValue } from './sql-driver';
 import type { AlertDeliveryStatus, AlertRecord, NewAlertInput } from '@/types/alert';
+
+export type { UpdateStatusOptions } from './alert-repository';
 
 /** Schema migrations, applied in order under `PRAGMA user_version`. */
 export const MIGRATIONS: readonly { version: number; statements: readonly string[] }[] = [
@@ -73,12 +76,7 @@ export const MIGRATIONS: readonly { version: number; statements: readonly string
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
 
-export type UpdateStatusOptions = Readonly<{
-  /** Required (non-empty) when moving an alert to `sent`. */
-  serverReceipt?: string | null;
-}>;
-
-export class SqliteAlertRepository {
+export class SqliteAlertRepository implements AlertRepository {
   private initPromise: Promise<void> | null = null;
 
   constructor(private readonly db: SqlDriver) {}

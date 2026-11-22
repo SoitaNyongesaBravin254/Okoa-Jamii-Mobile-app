@@ -13,9 +13,13 @@
  * TIER: unit. No database.
  */
 
+import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuthSession } from '../../src/domain/auth';
+import { createErrorHandler } from '../../src/http/error-handler';
+import { authenticate } from '../../src/http/middleware/authenticate';
+import { createSilentLogger } from '../../src/lib/logger';
 import { buildTestApp, type TestApp } from '../helpers/build-app';
 
 const VALID_ALERT = {
@@ -156,6 +160,50 @@ describe('role matrix over the HTTP stack', () => {
       message: expect.any(String),
     });
   });
+
+  it('rejects a duplicate registration with a 409 conflict', async () => {
+    const email = 'conflict@example.com';
+    const password = 'test-password-123';
+    // Register once to create the account.
+    const first = await request(ctx.app)
+      .post('/api/v1/auth/register')
+      .send({ displayName: 'Conflict User', email, password });
+    expect(first.status).toBe(201);
+
+    // Register again with the same email: the backend rejects with a
+    // ConflictError, which is now mapped to HTTP 409 and back to the
+    // `conflict` mobile error code.
+    const duplicate = await request(ctx.app)
+      .post('/api/v1/auth/register')
+      .send({ displayName: 'Duplicate User', email, password });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('conflict');
+    // The message must be the clear client-facing mapping, not a raw server
+    // message: duplicate registration displays "An account with this email
+    // address already exists."
+    expect(duplicate.body.error.message).toBe('An account with that email address already exists.');
+
+    // The unique index must not have been tripped: the account was created
+    // once and is still present (no silent overwrite). The fixture accounts
+    // (3) plus the one real conflict account = 4 total.
+    expect(ctx.users.size).toBe(4);
+  });
+
+  it('rejects a duplicate registration with an unknown code falls back to unknown', async () => {
+    const email = 'unknown-code@example.com';
+    const password = 'test-password-123';
+    await request(ctx.app)
+      .post('/api/v1/auth/register')
+      .send({ displayName: 'Conflict User', email, password });
+
+    // Register again; expect the service to surface a conflict. The HTTP
+    // adapter maps a 409 to `conflict` (see http-auth-service test).
+    const duplicate = await request(ctx.app)
+      .post('/api/v1/auth/register')
+      .send({ displayName: 'Duplicate User', email, password });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('conflict');
+  });
 });
 
 describe('health endpoint diagnosis permissions', () => {
@@ -263,6 +311,130 @@ describe('HTTP error sanitizer', () => {
     expect(response.status).toBe(401);
     expect(JSON.stringify(response.body)).not.toContain('at ');
     expect(response.body.error).not.toHaveProperty('stack');
+  });
+});
+
+describe('account changes take effect on the next request', () => {
+  it('demotes a user immediately: the old admin token keeps its claim but loses admin rights', async () => {
+    const ctx = buildTestApp();
+    const session = await registerRole(ctx, 'demoted-admin@example.com');
+    ctx.users.promote(session.user.id, 'admin');
+    const adminSession = await loginAs(ctx, 'demoted-admin@example.com');
+
+    // Precondition: the still-valid token really does carry the old claim.
+    expect(ctx.tokens.verify(adminSession.accessToken).role).toBe('admin');
+
+    ctx.users.promote(session.user.id, 'community');
+
+    const listing = await request(ctx.app)
+      .get('/api/v1/alerts')
+      .set('Authorization', `Bearer ${adminSession.accessToken}`);
+    expect(listing.status).toBe(403);
+    expect(listing.body.error.code).toBe('authorization-error');
+
+    const deletion = await request(ctx.app)
+      .delete('/api/v1/alerts/anything')
+      .set('Authorization', `Bearer ${adminSession.accessToken}`);
+    expect(deletion.status).toBe(403);
+
+    // /auth/me reports the CURRENT role, not the token's stale one.
+    const me = await request(ctx.app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${adminSession.accessToken}`);
+    expect(me.status).toBe(200);
+    expect(me.body.user.role).toBe('community');
+  });
+
+  it('does not grant the health diagnosis block to a demoted admin', async () => {
+    const ctx = buildTestApp({
+      probe: {
+        connected: false,
+        readyState: 0,
+        diagnosis: { category: 'network-timeout', hint: 'Check egress.' },
+        lastError: null,
+      },
+    });
+    const session = await registerRole(ctx, 'demoted-health@example.com');
+    ctx.users.promote(session.user.id, 'admin');
+    const adminSession = await loginAs(ctx, 'demoted-health@example.com');
+    ctx.users.promote(session.user.id, 'community');
+
+    const response = await request(ctx.app)
+      .get('/api/v1/health')
+      .set('Authorization', `Bearer ${adminSession.accessToken}`);
+    expect(response.status).toBe(503);
+    expect(response.body.db.hint).toBeUndefined();
+  });
+
+  it('refuses a deleted account on every authenticated route, including /auth/me', async () => {
+    const ctx = buildTestApp();
+    const session = await registerRole(ctx, 'deleted-user@example.com');
+    expect(ctx.users.remove(session.user.id)).toBe(true);
+
+    const me = await request(ctx.app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${session.accessToken}`);
+    expect(me.status).toBe(401);
+    expect(me.body.error.code).toBe('authentication-error');
+    // Same uniform message as any other invalid credential; no account oracle.
+    expect(me.body.error.message).toBe('The access token is invalid or has expired.');
+
+    const post = await request(ctx.app)
+      .post('/api/v1/alerts')
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send(VALID_ALERT);
+    expect(post.status).toBe(401);
+    expect(ctx.alerts.size).toBe(0);
+  });
+
+  it('returns /auth/me with no credential material in the body', async () => {
+    const ctx = buildTestApp();
+    const session = await registerRole(ctx, 'profile-only@example.com');
+
+    const me = await request(ctx.app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${session.accessToken}`);
+
+    expect(me.status).toBe(200);
+    expect(me.body.user).toEqual({
+      id: session.user.id,
+      displayName: 'User profile-only@example.com',
+      email: 'profile-only@example.com',
+      role: 'community',
+    });
+    const serialized = JSON.stringify(me.body);
+    expect(serialized).not.toContain('passwordHash');
+    expect(serialized).not.toContain('$2');
+  });
+
+  it('fails closed when the account lookup fails instead of trusting token claims', async () => {
+    const ctx = buildTestApp();
+    const adminToken = ctx.tokens.issue({
+      userId: 'u-lookup-failure',
+      role: 'admin',
+      email: 'admin@example.com',
+    }).token;
+
+    const probeApp = express();
+    probeApp.get(
+      '/probe',
+      authenticate(ctx.tokens, async () => {
+        throw new Error('account store unavailable');
+      }),
+      (_req, res) => {
+        res.json({ suppressed: true });
+      },
+    );
+    probeApp.use(createErrorHandler(createSilentLogger()));
+
+    const response = await request(probeApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      error: { code: 'internal-error', message: 'An unexpected error occurred.' },
+    });
+    expect(JSON.stringify(response.body)).not.toContain('account store unavailable');
   });
 });
 

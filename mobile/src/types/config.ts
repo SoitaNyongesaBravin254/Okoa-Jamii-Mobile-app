@@ -15,17 +15,18 @@ export type AppConfig = Readonly<{
   environment: AppEnvironment;
   api: Readonly<{
     /**
-     * Base URL of the future backend API.
-     * `null` means "no backend is configured" — Phase 1 runs without one.
-     * Set the EXPO_PUBLIC_API_BASE_URL environment variable when a backend exists.
+     * Backend ORIGIN, not an API path: e.g. `https://api.okoa.example`.
+     * Do not include `/api/v1`; the auth service appends it.
+     * `null` means no backend is configured, and authentication then fails
+     * with an explicit `unavailable` error instead of simulating success.
      */
     baseUrl: string | null;
   }>;
   features: Readonly<{
     /**
-     * While `true`, authentication is handled by a clearly-labelled on-device
-     * development stub (no network requests, no real accounts).
-     * Must be switched off once a real auth API exists.
+     * Isolated development/testing escape hatch only. While `true`, auth is
+     * handled by a clearly-labelled on-device stub (no network requests, no
+     * real accounts). The active app configuration sets this to `false`.
      */
     devAuthStub: boolean;
   }>;

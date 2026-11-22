@@ -28,6 +28,7 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { captureDeviceLocation } from '@/services/location/device-location';
 import { getAlertRepository } from '@/services/alerts';
+import { runAlertSync } from '@/services/alerts/alert-sync-runner';
 import { ALERT_CATEGORY_LABELS } from '@/services/alerts/alert-presenter';
 import {
   createSosSubmission,
@@ -82,6 +83,12 @@ function SosFlow() {
       const outcome = await submission.submit(category);
       setResult(outcome);
       setPhase('result');
+      if (outcome.outcome === 'saved') {
+        // Best effort only: the alert is already saved locally, so syncing
+        // must never delay or fail SOS activation. `runAlertSync` never
+        // rejects and the service refuses concurrent runs.
+        void runAlertSync();
+      }
     } catch {
       // The repository itself could not be opened (e.g. database failure).
       // Drop the cached controller so "Try again" re-attempts a fresh open.

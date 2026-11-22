@@ -13,7 +13,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-import type { AuthSession, UserProfile } from '@/types/auth';
+import { isUserRole, type AuthSession, type UserProfile } from '@/types/auth';
 
 export interface SessionStorage {
   /** Returns the stored session, or null when signed out / unavailable. */
@@ -122,10 +122,16 @@ function isUserProfile(value: unknown): value is UserProfile {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const candidate = value as { id?: unknown; displayName?: unknown; email?: unknown };
+  const candidate = value as {
+    id?: unknown;
+    displayName?: unknown;
+    email?: unknown;
+    role?: unknown;
+  };
   return (
     typeof candidate.id === 'string' &&
     typeof candidate.displayName === 'string' &&
-    typeof candidate.email === 'string'
+    typeof candidate.email === 'string' &&
+    isUserRole(candidate.role)
   );
 }

@@ -3,6 +3,8 @@
  *
  * Responsibilities:
  * - Track whether a session is loading, authenticated or unauthenticated.
+ * - Restore stored HTTP sessions through backend verification at startup, or
+ *   keep them as explicitly unverified when the backend cannot be reached.
  * - Persist the session through the secure storage abstraction.
  * - Surface submit state and auth errors to the forms.
  *
@@ -21,12 +23,14 @@ import {
 } from 'react';
 
 import { authService } from '@/services/auth/auth-service';
+import { restoreStoredSession } from '@/services/auth/session-restoration';
 import { sessionStore } from '@/services/auth/session-storage';
 import type {
   AuthProviderKind,
   AuthSession,
   LoginCredentials,
   RegistrationInput,
+  SessionVerificationState,
   UserProfile,
 } from '@/types/auth';
 
@@ -35,8 +39,15 @@ export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 type AuthState = Readonly<{
   status: AuthStatus;
   user: UserProfile | null;
-  /** Which auth implementation signed the user in (dev stub in Phase 1). */
+  /** Which auth implementation signed the user in. */
   provider: AuthProviderKind | null;
+  /**
+   * `verified` when the backend confirmed this session in the current run
+   * (fresh login/registration or successful `/auth/me`). `unverified` means a
+   * cached session is being trusted while the backend is unreachable; offline
+   * features stay available in both cases.
+   */
+  sessionVerification: SessionVerificationState | null;
   /** True while a sign-in/sign-up request is in flight. */
   isSubmitting: boolean;
   /** Error message from the last failed sign-in/sign-up attempt. */
@@ -44,7 +55,11 @@ type AuthState = Readonly<{
 }>;
 
 type AuthAction =
-  | Readonly<{ type: 'hydrated'; session: AuthSession | null }>
+  | Readonly<{
+      type: 'hydrated';
+      session: AuthSession | null;
+      verification: SessionVerificationState | null;
+    }>
   | Readonly<{ type: 'signed-in'; session: AuthSession }>
   | Readonly<{ type: 'signed-out' }>
   | Readonly<{ type: 'submit-started' }>
@@ -55,6 +70,7 @@ const initialState: AuthState = {
   status: 'loading',
   user: null,
   provider: null,
+  sessionVerification: null,
   isSubmitting: false,
   authError: null,
 };
@@ -67,6 +83,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         status: action.session ? 'authenticated' : 'unauthenticated',
         user: action.session?.user ?? null,
         provider: action.session?.provider ?? null,
+        sessionVerification: action.session ? action.verification : null,
       };
     case 'signed-in':
       return {
@@ -74,6 +91,11 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         status: 'authenticated',
         user: action.session.user,
         provider: action.session.provider,
+        // A session just issued by the HTTP backend (or the local stub) has
+        // not necessarily been checked against `/auth/me`; only real HTTP
+        // sessions are backend-verified by definition.
+        sessionVerification:
+          action.session.provider === 'http' ? 'verified' : 'unverified',
         isSubmitting: false,
         authError: null,
       };
@@ -102,14 +124,38 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Restore a previously stored session when the app starts.
+  // Restore a previously stored session when the app starts. HTTP sessions
+  // are verified with the backend; an unreachable backend keeps the cached
+  // session available for offline-first use instead of signing the user out.
   useEffect(() => {
     let isActive = true;
-    sessionStore.load().then((session) => {
-      if (isActive) {
-        dispatch({ type: 'hydrated', session });
-      }
-    });
+
+    restoreStoredSession({
+      load: () => sessionStore.load(),
+      save: (session) => sessionStore.save(session),
+      clear: () => sessionStore.clear(),
+      verifySession: (accessToken) => authService.verifySession(accessToken),
+    })
+      .then((outcome) => {
+        if (!isActive) return;
+        if (outcome.status === 'signed-out') {
+          dispatch({ type: 'hydrated', session: null, verification: null });
+          return;
+        }
+        dispatch({
+          type: 'hydrated',
+          session: outcome.session,
+          verification: outcome.verification,
+        });
+      })
+      .catch(() => {
+        // Defensive: restoration is written not to reject. If it somehow does,
+        // stay signed out rather than leaving the UI stuck on "loading".
+        if (isActive) {
+          dispatch({ type: 'hydrated', session: null, verification: null });
+        }
+      });
+
     return () => {
       isActive = false;
     };

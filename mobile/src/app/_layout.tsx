@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { useAlertSync } from '@/hooks/use-alert-sync';
 import { AuthProvider } from '@/store/auth-provider';
 
 SplashScreen.preventAutoHideAsync();
@@ -14,6 +15,9 @@ SplashScreen.preventAutoHideAsync();
  */
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  // One app-wide sync trigger: connectivity regained and foreground return.
+  useAlertSync();
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

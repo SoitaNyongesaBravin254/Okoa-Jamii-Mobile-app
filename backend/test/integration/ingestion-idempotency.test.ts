@@ -207,6 +207,19 @@ if (testUri.length === 0) {
 
       expect(await users.findById(created.id)).not.toBeNull();
       expect(await users.findById('000000000000000000000000')).toBeNull();
+
+      // Profile read (/auth/me path): the projection must never fetch the
+      // hash — `select: false` stays in force without an opt-in.
+      const profile = await users.findProfileById(created.id);
+      expect(profile).not.toBeNull();
+      expect(profile).not.toHaveProperty('passwordHash');
+      expect(profile!.role).toBe('community');
+      expect(await users.findProfileById('000000000000000000000000')).toBeNull();
+
+      // A malformed/foreign id is "no such account" against real Mongoose,
+      // not a CastError (null here -> uniform 401 in the middleware).
+      expect(await users.findProfileById('not-an-object-id')).toBeNull();
+      expect(await users.findById('not-an-object-id')).toBeNull();
     }, 20_000);
   });
 }

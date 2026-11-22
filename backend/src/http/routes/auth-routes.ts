@@ -14,7 +14,7 @@
 import { Router } from 'express';
 import type { AuthService, AuthOutcome } from '../../services/auth-service';
 import type { AuthErrorCode } from '../../domain/auth';
-import { AuthenticationError, NotFoundError } from '../../lib/errors';
+import { AuthenticationError } from '../../lib/errors';
 import type { TokenService } from '../../services/token-service';
 import { authenticate } from '../middleware/authenticate';
 
@@ -24,6 +24,7 @@ const AUTH_STATUS: Record<AuthErrorCode, number> = {
   'invalid-credentials': 401,
   network: 503,
   unavailable: 503,
+  conflict: 409,
   unknown: 500,
 };
 
@@ -41,6 +42,8 @@ function sendOutcome(outcome: AuthOutcome, successStatus: number, res: import('e
 export function createAuthRouter(deps: { authService: AuthService; tokens: TokenService }): Router {
   const { authService, tokens } = deps;
   const router = Router();
+  // The token only proves identity; the account record decides role/existence.
+  const auth = authenticate(tokens, authService.resolveUser);
 
   router.post('/register', async (req, res) => {
     const outcome = await authService.register(req.body);
@@ -52,7 +55,7 @@ export function createAuthRouter(deps: { authService: AuthService; tokens: Token
     sendOutcome(outcome, 200, res);
   });
 
-  router.get('/me', authenticate(tokens), async (req, res) => {
+  router.get('/me', auth, async (req, res) => {
     const principal = req.principal;
     if (!principal) {
       // Unreachable when `authenticate` ran; kept so the invariant is total.
@@ -60,7 +63,10 @@ export function createAuthRouter(deps: { authService: AuthService; tokens: Token
     }
     const profile = await authService.resolveUser(principal.userId);
     if (!profile) {
-      throw new NotFoundError('The account for this token no longer exists.');
+      // Raced with an account deletion after the middleware lookup. Same
+      // uniform 401 as any other unusable credential: a deleted account must
+      // not be distinguishable from an invalid token.
+      throw new AuthenticationError('The access token is invalid or has expired.');
     }
     res.json({ user: profile });
   });

@@ -18,7 +18,12 @@ import { ALERT_CATEGORIES } from '../../domain/alerts';
 import { AuthenticationError, NotFoundError, ValidationError } from '../../lib/errors';
 import type { AlertService } from '../../services/alert-service';
 import type { TokenService } from '../../services/token-service';
-import { authenticate, requireAdmin, requireResponder } from '../middleware/authenticate';
+import {
+  authenticate,
+  requireAdmin,
+  requireResponder,
+  type PrincipalResolver,
+} from '../middleware/authenticate';
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -37,10 +42,15 @@ function pathId(value: string | string[] | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
-export function createAlertRouter(deps: { alertService: AlertService; tokens: TokenService }): Router {
-  const { alertService, tokens } = deps;
+export function createAlertRouter(deps: {
+  alertService: AlertService;
+  tokens: TokenService;
+  /** Current-account lookup; authorization never trusts token claims alone. */
+  resolveUser: PrincipalResolver;
+}): Router {
+  const { alertService, tokens, resolveUser } = deps;
   const router = Router();
-  const auth = authenticate(tokens);
+  const auth = authenticate(tokens, resolveUser);
 
   router.post('/', auth, async (req, res) => {
     const principal = req.principal;

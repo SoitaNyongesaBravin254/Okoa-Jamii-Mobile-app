@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "node16",
     "moduleResolution": "node16",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -19,6 +19,7 @@
     "src/types/**/*.ts",
     "src/services/alerts/**/*.ts",
     "src/services/location/__tests__/**/*.ts",
+    "src/services/auth/__tests__/**/*.ts",
     "!src/services/alerts/expo-sqlite-driver.ts",
     "!src/services/alerts/index.ts"
   ]

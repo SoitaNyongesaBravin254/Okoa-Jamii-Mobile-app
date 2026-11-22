@@ -112,6 +112,7 @@ describe('register', () => {
     const racingUsers: UserRepository = {
       findByEmail: async () => null,
       findById: (id: string) => inner.findById(id),
+      findProfileById: (id: string) => inner.findProfileById(id),
       create: (user) => inner.create(user),
     };
     const racing = createAuthService({
@@ -273,6 +274,39 @@ describe('token service hardening', () => {
 });
 
 describe('resolveUser', () => {
+  it('reads the principal through the profile query, never the hash-bearing one', async () => {
+    const ctx = setup();
+    const outcome = await ctx.auth.register(VALID_REGISTRATION);
+    if (!outcome.ok) throw new Error('fixture registration failed');
+
+    // Call recorder: /auth/me must not trigger the repository query that
+    // opts into passwordHash (findById), only the profile-only read.
+    const calls = { findById: 0, findProfileById: 0 };
+    const recording: UserRepository = {
+      findByEmail: (email) => ctx.users.findByEmail(email),
+      findById: (id) => {
+        calls.findById += 1;
+        return ctx.users.findById(id);
+      },
+      findProfileById: (id) => {
+        calls.findProfileById += 1;
+        return ctx.users.findProfileById(id);
+      },
+      create: (user) => ctx.users.create(user),
+    };
+    const auth = createAuthService({
+      config: ctx.config,
+      users: recording,
+      tokens: ctx.tokens,
+      logger: createSilentLogger(),
+    });
+
+    const profile = await auth.resolveUser(outcome.session.user.id);
+    expect(profile).not.toBeNull();
+    expect(calls.findProfileById).toBe(1);
+    expect(calls.findById).toBe(0);
+  });
+
   it('returns the profile without the hash, and null for unknown ids', async () => {
     const ctx = setup();
     const outcome = await ctx.auth.register(VALID_REGISTRATION);

@@ -17,7 +17,12 @@ import type {
   ListAlertsOptions,
   StoredAlert,
 } from '../../src/repositories/alert-repository';
-import type { NewUser, StoredUser, UserRepository } from '../../src/repositories/user-repository';
+import type {
+  NewUser,
+  StoredUser,
+  StoredUserProfile,
+  UserRepository,
+} from '../../src/repositories/user-repository';
 
 export class InMemoryAlertRepository implements AlertRepository {
   private readonly store = new Map<string, StoredAlert>();
@@ -104,6 +109,18 @@ export class InMemoryUserRepository implements UserRepository {
     return this.byId.get(id) ?? null;
   }
 
+  async findProfileById(id: string): Promise<StoredUserProfile | null> {
+    const user = this.byId.get(id);
+    if (!user) return null;
+    // Mirrors the Mongo projection: the hash is not part of a profile read.
+    return Object.freeze({
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+    });
+  }
+
   async create(user: NewUser): Promise<StoredUser> {
     const email = user.email.trim().toLowerCase();
     if (this.byEmail.has(email)) {
@@ -137,5 +154,14 @@ export class InMemoryUserRepository implements UserRepository {
     const updated: StoredUser = Object.freeze({ ...user, role });
     this.byId.set(userId, updated);
     this.byEmail.set(user.email, updated);
+  }
+
+  /** Test convenience: simulate account deletion (no delete API exists yet). */
+  remove(userId: string): boolean {
+    const user = this.byId.get(userId);
+    if (!user) return false;
+    this.byId.delete(userId);
+    this.byEmail.delete(user.email);
+    return true;
   }
 }

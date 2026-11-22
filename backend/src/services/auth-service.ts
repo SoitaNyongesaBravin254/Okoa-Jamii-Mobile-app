@@ -146,7 +146,9 @@ export function createAuthService(deps: {
     },
 
     async resolveUser(userId: string): Promise<UserProfile | null> {
-      const user = await users.findById(userId);
+      // Profile-specific query: /auth/me needs no credential material, so the
+      // password hash is never read for it.
+      const user = await users.findProfileById(userId);
       return user ? toProfile(user) : null;
     },
   });

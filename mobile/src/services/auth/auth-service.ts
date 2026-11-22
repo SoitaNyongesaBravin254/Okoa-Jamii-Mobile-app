@@ -1,28 +1,26 @@
 /**
- * Authentication service layer.
+ * Authentication service selection.
  *
- * Phase 1 has NO backend. The exported `authService` therefore points at a
- * clearly-labelled development stub that simulates the API on-device so the
- * UI flow can be exercised end-to-end. When a real backend exists (Phase 2+),
- * implement the `AuthService` interface with an HTTP client and switch the
- * selection below — callers (the auth store) will not need to change.
+ * The active application configuration uses the real HTTP implementation in
+ * `http-auth-service.ts`, pointed at `EXPO_PUBLIC_API_BASE_URL`. The auth store
+ * only depends on the `AuthService` interface below, so the provider never
+ * needs to know which implementation is in use.
+ *
+ * The development stub remains available for isolated development and tests,
+ * but it is no longer selected by `appConfig` (see `features.devAuthStub`).
+ * When no backend URL is configured the HTTP service fails with an explicit
+ * `unavailable` result instead of accepting simulated credentials.
  */
 
 import { appConfig } from '@/config/app-config';
-import type {
-  AuthProviderKind,
-  AuthResult,
-  LoginCredentials,
-  RegistrationInput,
-} from '@/types/auth';
+import {
+  createHttpAuthService,
+  type AuthService,
+} from '@/services/auth/http-auth-service';
+import type { AuthResult, SessionVerification } from '@/types/auth';
 import { isValidEmail, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/utils/validation';
 
-export interface AuthService {
-  /** Identifies the implementation in use (shown in the UI for transparency). */
-  readonly provider: AuthProviderKind;
-  login(credentials: LoginCredentials): Promise<AuthResult>;
-  register(input: RegistrationInput): Promise<AuthResult>;
-}
+export type { AuthService } from '@/services/auth/http-auth-service';
 
 const DEV_STUB_LATENCY_MS = 400;
 const DEV_STUB_SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -38,6 +36,8 @@ function delay(ms: number): Promise<void> {
  *   credentials are accepted, so there is no user database and passwords are
  *   never retained.
  * - Returns a session with a clearly fake token marked `development-stub`.
+ *
+ * Only for isolated development/testing; never selected by the active config.
  */
 export function createDevelopmentAuthService(): AuthService {
   console.info(
@@ -99,6 +99,19 @@ export function createDevelopmentAuthService(): AuthService {
         session: createDevSession(email.trim(), displayName.trim()),
       };
     },
+
+    async verifySession(): Promise<SessionVerification> {
+      // The stub has no backend token to verify. Restoration for stub sessions
+      // is handled locally by the auth store and never calls this method; if
+      // that ever changes, fail transiently rather than inventing a profile.
+      return {
+        status: 'unverified',
+        error: {
+          code: 'unavailable',
+          message: 'Simulated sessions cannot be verified with the backend.',
+        },
+      };
+    },
   };
 }
 
@@ -118,31 +131,17 @@ function createDevSession(email: string, displayName?: string) {
       // The stub has no user database; fall back to the email prefix as a name.
       displayName: displayName ?? email.split('@')[0] ?? 'Community member',
       email,
+      // The stub is a local development aid; treat it as the base role.
+      role: 'community' as const,
     },
     expiresAt,
   };
 }
 
 /**
- * Used when the dev stub is disabled but no backend is wired up yet.
- * Always fails explicitly instead of pretending to succeed.
+ * Active service. The stub is opt-in through config only; with it disabled the
+ * app always talks HTTP and fails honestly when the backend is unreachable.
  */
-function createUnconfiguredAuthService(): AuthService {
-  const unavailable: AuthResult = {
-    ok: false,
-    error: {
-      code: 'unavailable',
-      message: 'No authentication backend is configured yet. This arrives in a later phase.',
-    },
-  };
-
-  return {
-    provider: 'http',
-    login: async () => unavailable,
-    register: async () => unavailable,
-  };
-}
-
 export const authService: AuthService = appConfig.features.devAuthStub
   ? createDevelopmentAuthService()
-  : createUnconfiguredAuthService();
+  : createHttpAuthService({ baseUrl: appConfig.api.baseUrl });

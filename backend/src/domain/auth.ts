@@ -31,6 +31,7 @@ export const AUTH_ERROR_CODES = [
   'invalid-credentials',
   'network',
   'unavailable',
+  'conflict',
   'unknown',
 ] as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];

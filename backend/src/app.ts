@@ -148,9 +148,20 @@ export function createApp(deps: AppDependencies): Express {
     );
   }
 
-  app.use('/api/v1/health', createHealthRouter({ probeDatabase, optionalAuth: optionalAuthenticate(tokens) }));
+  // Authorization is rebuilt from the account record on every request, so a
+  // demoted or deleted user's old token cannot outlive the change.
+  app.use(
+    '/api/v1/health',
+    createHealthRouter({
+      probeDatabase,
+      optionalAuth: optionalAuthenticate(tokens, authService.resolveUser),
+    }),
+  );
   app.use('/api/v1/auth', createAuthRouter({ authService, tokens }));
-  app.use('/api/v1/alerts', createAlertRouter({ alertService, tokens }));
+  app.use(
+    '/api/v1/alerts',
+    createAlertRouter({ alertService, tokens, resolveUser: authService.resolveUser }),
+  );
 
   app.use(notFoundHandler);
   app.use(createErrorHandler(logger));

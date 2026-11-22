@@ -17,7 +17,7 @@
 
 import { AlertStorageError } from './alert-errors';
 import { isAlertCategory, validateAlertLocation } from './alert-model';
-import type { SqliteAlertRepository } from './sqlite-alert-repository';
+import type { AlertRepository } from './alert-repository';
 import type {
   AlertCategory,
   AlertLocation,
@@ -68,7 +68,7 @@ const UNAVAILABLE_NOTICES: Record<LocationUnavailableReason, string> = {
  * capture function. The busy-guard state is per controller instance.
  */
 export function createSosSubmission(
-  repository: Pick<SqliteAlertRepository, 'createAlert'>,
+  repository: Pick<AlertRepository, 'createAlert'>,
   captureLocation: LocationCapture,
 ): SosSubmission {
   let inFlight = false;
